@@ -14,7 +14,6 @@ A CLI to to help simplify and streamline development across multiple Bedrock con
 - [Project Configuration](#project-configuration)
 - [Usage](#usage)
 - [Available Commands](#available-commands)
-- [Getting Started](#getting-started)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](/LICENSE)
