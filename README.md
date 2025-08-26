@@ -61,6 +61,7 @@ ln -s /path/to/brutils /usr/local/bin/brutils
 ```
 
 **NOTE:** If you're already using a CLI named `brutils`, you can symlink it under another name (eg. `br-utils`) to avoid conflicts. In case this command doesn't work due to permissions, you can use `sudo ln -s` instead.
+
 4. Please see [Project Configuration](#project-configuration) to configure each Bedrock configuration to work seamlessly with this tool.
 
 ## Project Configuration
