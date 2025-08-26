@@ -27,7 +27,7 @@ A CLI to to help simplify and streamline development across multiple Bedrock con
 - Manage your repositories, both local and remote, using separate `composer.json` and `composer.local.json` files
 - Add local plugin and theme repositories to your `composer.local.json` file to preview local changes faster and boost development workflows
 - Check that the local plugin and theme paths were set correctly in your `.env` file
-- Track the active `composer.json` file in each config to easily know which changes you're viewing locally
+- Use a `.brutilsrc` file to track the active `composer.json` file in each config to easily know which changes you're viewing locally, as well as the configuration name and default vendor name for in-house themes and plugins (optional)
 - Automate other common Docker + Composer workflows like starting, stopping and
 rebuilding containers, or updating Composer dependencies
 
