@@ -106,8 +106,8 @@ Most of the commands will only work in a Bedrock configuration from the project 
 - `use-local|update-local`: Switch to `composer.local.json` and update deps
 - `add-local-repo <plugin|theme> <repo-name> [<vendor>]`: Adds local theme or plugin repository to `composer.local.json`
 - `update|update-main|use-main <vendor/package>`: Switches to `composer.json`. Updates all dependencies if no argument is supplied, or a single dependency if the correct format is supplied.
-- `add-paths`: Add `PLUGINS_PATH` and `THEMES_PATH` variables to `.env`
-- `check-paths`: Verify plugin/theme paths are set in `.env` and point to your local paths
+- `add-paths`: Add `PLUGINS_PATH` and `THEMES_PATH` variables to `.env.local`
+- `check-paths`: Verify plugin/theme paths are set in `.env.local` and point to your local paths
 - `which`: Verify which `composer.json` file is being used
 - `help|-h|--help`: Show help menu
 - `-v|--version`: Display plugin version
