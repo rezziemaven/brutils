@@ -32,6 +32,7 @@ A CLI to to help simplify and streamline development across multiple Bedrock con
 rebuilding containers, or updating Composer dependencies
 
 ## Requirements
+
 - `jq` (this is necessary to modify the composer.local.json when adding local repositories)
   - Install: use the `brutils init` to configure your project to use `brutils`. This copies the `Dockerfile.composer` file to your configuration, which is then used in the `docker-compose.override.yml` file as seen in [Project Configuration](#project-configuration) below.
 - The name of the configuration should have `bedrock` in the `docker-compose.yml` file for certain commands (eg. `start`, `stop`) to work as expected. You can override the container names to each service to the `docker-compose.override.yml` file using `container_name`, if necessary, eg.
@@ -45,19 +46,25 @@ php
 ```
 
 ## Installation
+
 1. Clone this repository to your preferred directory
 2. Ensure that `brutils` has the correct permissions to be executable:
-```bash
-chmod +x brutils
-```
+
+  ```bash
+  chmod +x brutils
+  ```
+
 3. Set up a symlink to add it to the location of your other CLIs, eg.
+
 ```bash
 ln -s /path/to/brutils /usr/local/bin/brutils
 ```
+
 **NOTE:** If you're already using a CLI named `brutils`, you can symlink it under another name (eg. `br-utils`) to avoid conflicts. In case this command doesn't work due to permissions, you can use `sudo ln -s` instead.
 4. Please see [Project Configuration](#project-configuration) to configure each Bedrock configuration to work seamlessly with this tool.
 
 ## Project Configuration
+
 - Run `brutils init` to begin the project configuration. It will prompt you for the configuration name or use the default one shown, and you can set an optional vendor name if working with in-house plugins or themes locally. These are all stored in a `.brutilsrc` configuration file saved in each project root. This command also adds the following files:
   - `.env.local`: A copy of your `.env` file with two additional variables, `PLUGINS_PATH` and `THEMES_PATH`. If this file already exists, it will just add these variables to it. These variables let you take advantage of symlinking and improved development workflow for your plugins and themes. If for some reason these aren't set, you can use the command `brutils add-paths` to add the variables to the `.env` file. After that, you need add the local paths where your plugins and themes are stored respectively.
   - `Dockerfile.composer`: A modified composer build adding `jq` to the service.
@@ -65,6 +72,7 @@ ln -s /path/to/brutils /usr/local/bin/brutils
 - The `.brutilsrc` file also tracks the current composer file (`composer.json` or `composer.local.json`). This allows you to switch safely between configs in multiple terminals or windows.
 
 - After you run `brutils init`, you then need to update your `.gitignore` so it doesn't track the following files:
+
 ```bash
 
 # Docker
@@ -81,12 +89,15 @@ composer.local.*
 ```
 
 ## Usage
+
 ```bash
 brutils <command> [options]
 ```
+
 Most of the commands will only work in a Bedrock configuration from the project root folder.
 
 ## Available commands
+
 - `start`: Stop all other running Bedrock configs and start the current one
 - `stop`: Stop the current Bedrock config
 - `rebuild [--full]`: Rebuild the current Bedrock config via `docker compose`. The optional `--full` flag removes all containers and volumes and rebuilds from scratch.
@@ -102,6 +113,7 @@ Most of the commands will only work in a Bedrock configuration from the project 
 - `-v|--version`: Display plugin version
 
 ## Troubleshooting
+
 - **PLUGINS_PATH and THEMES_PATH variables not set?**
 Make sure you have the `.env.local` file with the paths correctly set, and if you already had a `docker-compose.override.yml` file, that it mounts the volumes to `PLUGINS_PATH` and `THEMES_PATH` for `nginx`, `php` and `composer` respectively. You can reference the `templates/docker-compose.override.yml` file to set them properly.
 - **COMPOSER env variable not set?**
@@ -110,4 +122,5 @@ Make sure `.brutilsrc` exists and has the correct value (eg. `COMPOSER=composer.
 Double-check your plugin/ theme name and path. `brutils` assumes local repos are in the path `/opt/plugins/name-of-plugin` or `/opt/themes/name-of-theme`.
 
 ## Contributing
+
 This CLI is currently under active development and currently not ready to accept external contributions just yet. Please feel free to explore or use the code, but hold off on submitting issues or pull requests at this time. Thanks for understanding!
