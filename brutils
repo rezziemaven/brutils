@@ -1,78 +1,84 @@
 #!/usr/bin/env bash
+
 VERSION=0.1.0
+
+set -e
+
+is_initialized=0
+
+LOCAL_ENV=.env.local
+
+# Find source directory
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BRUTILS_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+
+source "$BRUTILS_DIR/lib/styles.sh"
+source "$BRUTILS_DIR/lib/utils.sh"
+
+if [ -f .brutilsrc ]; then
+  source .brutilsrc
+  is_initialized=1
+fi
 
 COMMAND=$1
 shift
 
-# Load/ set $COMPOSER variable
-if [ -f .brutils_env ]; then
-  source .brutils_env
-else COMPOSER=composer.json # default fallback
-fi
-
-# ANSI color code variables
-RED="\033[31m"
-BLUE="\033[0;94m"
-CYAN="\033[36m"
-GREEN="\033[0;92m"
-WHITE="\033[0;97m"
-GRAY="\033[90m"
-EXPAND_BG="\033[K"
-RED_BG="\033[101m${EXPAND_BG}"
-BLUE_BG="\033[0;104m${EXPAND_BG}"
-GREEN_BG="\033[0;102m${EXPAND_BG}"
-YELLOW_BG="\033[103m${EXPAND_BG}"
-BOLD="\033[1m"
-ULINE="\033[4m"
-ITALICS="\033[3m"
-ENDSTYLE="\033[0m"
-
-check_if_bedrock_config() {
-  result=$(docker compose config 2>/dev/null | grep -m 1 'bedrock')
-  if [[ "$result" == *"bedrock"* ]]; then
-    echo -e "${GREEN_BG}✅ Bedrock configuration detected: ${result#*: }${ENDSTYLE}"
-  else
-    echo -e "${YELLOW_BG}❌ Not a Bedrock configuration. Exiting.${ENDSTYLE}"
-    exit 1
-  fi
-}
-
-bedrock_config_name() {
-  result=$(docker compose config 2>/dev/null | grep -m 1 'bedrock')
-  echo "${result#*: }"
-}
-
 add_local_repo() {
   REPO_TYPE=$1 # plugin or theme
-  REPO_NAME=$2
+  REPO_NAME=$2 # name of repo
+  VENDOR=$3 # name of plugin/theme vendor, optional
+  if [ -z "$VENDOR" ] && [[ -n "$DEFAULT_VENDOR" ]]; then
+    VENDOR=$DEFAULT_VENDOR
+  fi
+
+  if [ -z "$REPO_TYPE" ] || [ -z "$REPO_NAME" ] || [ -z "$VENDOR" ]; then
+    echo -e "${YELLOW_BG}❌ Usage: brutils add-local-repo <plugin|theme> <repo-name> [<vendor>]${ENDSTYLE}"
+    return 1
+  fi
+
+  source "$LOCAL_ENV"
+
+  if [[ "$REPO_TYPE" == "theme" ]]; then
+    LOCAL_REPO_PATH="${THEMES_PATH}/${REPO_NAME}"
+  elif [[ "$REPO_TYPE" == "plugin" ]]; then
+    LOCAL_REPO_PATH="${PLUGINS_PATH}/${REPO_NAME}"
+  fi
+
   REPO_PATH="/opt/${REPO_TYPE}s/${REPO_NAME}"
+  PACKAGE_NAME="$VENDOR/$REPO_NAME"
 
-  if [ -z "$REPO_TYPE" ] || [ -z "$REPO_NAME" ]; then
-    echo -e "${YELLOW_BG}❌ Usage: brutils add-repo <plugin|theme> <repo-name>${ENDSTYLE}"
+  if ! [ -d $LOCAL_REPO_PATH ]; then
+    echo -e "${YELLOW_BG}❌ $PACKAGE_NAME not found at $REPO_PATH. Check name and type of repo and try again.${ENDSTYLE}"
     return 1
   fi
 
-  docker exec "$(bedrock_config_name)-wordpress" sh -c "[ -d '$REPO_PATH' ]"
-  if [ $? -ne 0 ]; then
-    echo -e "${YELLOW_BG}❌ $REPO_NAME not found at $REPO_PATH. Check name and type of repo and try again.${ENDSTYLE}"
-    return 1
-  fi
+  add_local_composer
 
-  echo "📦 Adding local $REPO_TYPE $REPO_NAME to composer.local.json..."
+  echo -e "📦 Adding local $REPO_TYPE ${GREEN}$REPO_NAME${ENDSTYLE} to composer.local.json..."
   REPO_OPTIONS="{ \"type\": \"path\", \"url\": \"$REPO_PATH\", \"options\": { \"symlink\": true } }"
-  docker compose run --rm -e COMPOSER=composer.local.json composer \
+  docker compose --env-file "$LOCAL_ENV" run --rm -e PACKAGE_NAME="$PACKAGE_NAME" composer sh -c ' \
+    jq --arg package_name "$PACKAGE_NAME" \
+    "del(.repositories[] | select( has(\"url\") and (.url | contains(\$package_name)) ) )" \
+    composer.local.json > composer.local.tmp.json &&  \
+    mv composer.local.tmp.json composer.local.json'
+  docker compose --env-file "$LOCAL_ENV" run --rm -e COMPOSER=composer.local.json composer \
     config "repositories.$REPO_NAME" "$REPO_OPTIONS"
-  docker compose run --rm -e COMPOSER=composer.local.json composer \
-    remove "350org/$REPO_NAME"
-  docker compose run --rm -e COMPOSER=composer.local.json composer \
-    require "350org/$REPO_NAME:*"
+  docker compose --env-file "$LOCAL_ENV" run --rm -e COMPOSER=composer.local.json composer \
+    remove "${PACKAGE_NAME}"
+  docker compose --env-file "$LOCAL_ENV" run --rm -e COMPOSER=composer.local.json composer \
+    require "${PACKAGE_NAME}:*"
 }
 
 update_main_composer_dependencies() {
   PACKAGE=$1
   if [ -z "$PACKAGE" ]; then
     echo -e "${BOLD}📦 Updating dependencies from composer.json...${ENDSTYLE}"
-    docker compose run --rm composer update
+    docker compose --env-file "$LOCAL_ENV" run --rm composer update
     return 1
   fi
 
@@ -82,157 +88,130 @@ update_main_composer_dependencies() {
   fi
 
   echo "Updating ${PACKAGE}..."
-    docker compose run --rm composer update "$PACKAGE"
-}
-
-add_path_variables() {
-  docker compose config | grep -m 2 -E 'THEMES_PATH|PLUGINS_PATH' > /dev/null
-    if [ $? -eq 0 ]; then
-      echo -e "${YELLOW_BG}❌ Variables already added to .env. Exiting.${ENDSTYLE}"
-      return 1
-    fi
-    echo -e "${BOLD}⚙️ Adding path variables to .env...${ENDSTYLE}"
-    echo -e "
-# PHP and Composer Environment Variables
-# These values are used to load the local paths to your theme and plugin folders
-THEMES_PATH=
-PLUGINS_PATH=
-    " >> .env
-    echo "✅ Done! Here's the next steps:"
-    echo -e "1. Add the paths to your plugins and themes in your ${CYAN}.env${ENDSTYLE} file"
-    echo -e "2. Add the following to your to the php and composer services in the ${CYAN}docker-compose.yml${ENDSTYLE} file:"
-    echo -e "
-        php:
-          ${GRAY}#...${ENDSTYLE}
-          volumes:
-            ${GRAY}#...${ENDSTYLE}
-            - \${THEMES_PATH}:/opt/themes
-            - \${PLUGINS_PATH}:/opt/plugins
-          env_file:
-            - .env
-
-        composer:
-          ${GRAY}#...${ENDSTYLE}
-          volumes:
-            ${GRAY}#...${ENDSTYLE}
-            - \${THEMES_PATH}:/opt/themes
-            - \${PLUGINS_PATH}:/opt/plugins
-          env_file:
-            - .env
-          "
+    docker compose --env-file "$LOCAL_ENV" run --rm composer update "$PACKAGE"
 }
 
 show_help() {
   echo -e "${BOLD}🧰 brutils - Bedrock Utility CLI${ENDSTYLE}"
-  echo ""
+  echo    ""
   echo -e "${BOLD}Usage:${ENDSTYLE} brutils ${BOLD}<command>${ENDSTYLE} [${ITALICS}options${ENDSTYLE}]"
-  echo ""
+  echo    ""
   show_help_commands
 }
 
-show_help_commands() {
-  echo -e "${BOLD}Available commands:${ENDSTYLE}"
-  echo -e "  ${BLUE}start         Stop all other running Bedrock configs and "
-  echo "                start the current one"
-  echo "  stop          Stop the current Bedrock config"
-  echo "  rebuild       Rebuild the current config via docker compose"
-  echo "  cleanup       Remove orphaned Composer containers"
-  echo "  install-local Run composer install on composer.local.json"
-  echo "  use-local|update-local"
-  echo "                Switch to composer.local.json and update deps."
-  echo "  add-local-repo <plugin|theme> <repo-name>"
-  echo "                Adds local theme or plugin repository to "
-  echo "                composer.local.json"
-  echo "  update|update-main|use-main <vendor/package>"
-  echo "                Switches to composer.json. Updates all dependencies "
-  echo "                if no argument is supplied, or a single dependency "
-  echo "                if the correct format is supplied."
-  echo "  add-paths     Add PLUGINS_PATH and THEMES_PATH variables to .env"
-  echo "  check-paths   Verify plugin/theme paths are set in .env and "
-  echo "                point to your local paths"
-  echo "  which-composer"
-  echo "                Verify which composer.json file is being used"
-  echo "  help|-h|--help"
-  echo "                Show help menu"
-  echo -e "  -v|--version  Display plugin version${ENDSTYLE}"
-  echo ""
-  echo -e "${BOLD}💡 Pro tip: brutils commands should be run from the project root!${ENDSTYLE}"
-}
-
+# Commands
 case "$COMMAND" in
-  start)
-    # Start Bedrock configuration in the folder you are using the CLI from
+  init|-i)
+    if [ -f .brutilsrc ]; then
+      echo -e "${YELLOW_BG}❌ Project already configured. Exiting.${ENDSTYLE}"
+      exit 1
+    fi
     check_if_bedrock_config
-    echo "🛑 Stopping other running Bedrock containers (if any)..."
-    docker container stop $(docker ps -q --filter "name=bedrock") 2>/dev/null
-    echo "🟢 Starting $(bedrock_config_name) and cleaning up orphans..."
-    docker compose up -d --remove-orphans
+    echo "COMPOSER=composer.json" > .brutilsrc
+    default_config_name=$(get_config_name)
+    echo -e "Enter the Bedrock configuration name (or press Enter for default): ${GRAY}${default_config_name}${ENDSTYLE}"
+    read user_entered_config_name
+    if [[ -z "$user_entered_config_name" ]]; then
+      update_var_in_brutilsrc CONFIG_NAME "$default_config_name"
+    else
+      update_var_in_brutilsrc CONFIG_NAME "$user_entered_config_name"
+    fi
+    echo "Enter your default vendor name (or press Enter to leave blank):"
+    read default_vendor_name
+    if [[ "$default_vendor_name" ]]; then
+      update_var_in_brutilsrc DEFAULT_VENDOR "$default_vendor_name"
+    fi
+    is_initialized=1
+    echo -e "${GREEN_BG}✅ .brutilsrc added to project directory. Please add to your .gitignore file.${ENDSTYLE}"
+    copy_composer_dockerfile
+    add_local_env
+    if cat "$LOCAL_ENV" | grep -qE 'THEMES_PATH|PLUGINS_PATH'; then
+      echo -e "${YELLOW}⚠️ THEMES_PATH and PLUGINS_PATH variables already added to .env.local. Skipping ...${ENDSTYLE}"
+    else
+       echo -e "${BOLD}⚙️ Adding path variables to .env.local ...${ENDSTYLE}"
+      add_path_variables >/dev/null
+    fi
+    add_docker_config_override
+    show_last_init_steps
+    ;;
+  start)
+    check_if_init
+    if [ -n "$(docker ps -q --filter "name=bedrock")" ]; then
+      echo "🛑 Stopping other running Bedrock containers (if any)..."
+      docker container stop $(docker ps -q --filter "name=bedrock") 2>/dev/null
+    fi
+    echo "🟢 Starting $(get_config_name) and cleaning up orphans..."
+    docker compose --env-file "$LOCAL_ENV" up -d --remove-orphans
     echo "✅ Done!"
     ;;
   stop)
-    check_if_bedrock_config
-    echo "🛑 Stopping $(bedrock_config_name)..."
-    docker compose down --remove-orphans
-    echo "$(bedrock_config_name) stopped."
+    check_if_init
+    echo "🛑 Stopping $(get_config_name)..."
+    docker compose --env-file "$LOCAL_ENV" down --remove-orphans
+    echo "$(get_config_name) stopped."
     ;;
   rebuild)
-    check_if_bedrock_config
-    echo "🔁 Rebuilding $(bedrock_config_name)..."
-    docker compose up -d --build --remove-orphans
+    check_if_init
+    if [[ "$1" == "--full" ]]; then
+      echo "🔁 Forcing full rebuild of $(get_config_name)..."
+      docker compose --env-file "$LOCAL_ENV" down --volumes --remove-orphans
+      docker compose --env-file "$LOCAL_ENV" build --no-cache
+      docker compose --env-file "$LOCAL_ENV" up -d
+    else
+      echo "🔁 Rebuilding $(get_config_name)..."
+      docker compose --env-file "$LOCAL_ENV" down --remove-orphans
+      docker compose --env-file "$LOCAL_ENV" up -d --build
+    fi
     echo "✅ Done!"
     ;;
   cleanup)
-    check_if_bedrock_config
+    check_if_init
     echo "🧹 Removing all orphaned Composer containers..."
     docker container rm $(docker ps -q --filter "name=composer" --filter "status=exited")
     echo "✅ Done!"
     ;;
   install-local)
-    check_if_bedrock_config
-    if ! [ -f "composer.local.json" ]; then
-      echo "Creating composer.local.json from composer.json..."
-      cp composer.json composer.local.json
-      echo "✅ composer.local.json created."
-    fi
+    check_if_init
+    add_local_composer
     echo "Running local install with composer.local.json..."
-    docker compose run --rm -e COMPOSER=composer.local.json composer install
-    echo "COMPOSER=composer.local.json" > .brutils_env
+    docker compose --env-file "$LOCAL_ENV" run --rm -e COMPOSER=composer.local.json composer install
+    update_var_in_brutilsrc COMPOSER composer.local.json
     ;;
   use-local|update-local)
-    check_if_bedrock_config
+    check_if_init
     echo "Switching to composer.local.json and updating dependencies..."
-    docker compose run --rm -e COMPOSER=composer.local.json composer update
-    echo "COMPOSER=composer.local.json" > .brutils_env
+    docker compose --env-file "$LOCAL_ENV" run --rm -e COMPOSER=composer.local.json composer update
+    update_var_in_brutilsrc COMPOSER composer.local.json
     ;;
   add-local-repo)
-    check_if_bedrock_config
+    check_if_init
     add_local_repo "$@"
-    echo "COMPOSER=composer.local.json" > .brutils_env
+    update_var_in_brutilsrc COMPOSER composer.local.json
     ;;
   install)
-    check_if_bedrock_config
+    check_if_init
     echo "Installing dependencies from composer.json..."
-    docker compose run --rm composer install
-    echo "COMPOSER=composer.json" > .brutils_env
+    docker compose --env-file "$LOCAL_ENV" run --rm composer install
+    update_var_in_brutilsrc COMPOSER composer.json
     ;;
   update|update-main|use-main)
-    check_if_bedrock_config
+    check_if_init
     update_main_composer_dependencies "$@"
-    echo "COMPOSER=composer.json" > .brutils_env
+    update_var_in_brutilsrc COMPOSER composer.json
     ;;
   add-paths)
-    check_if_bedrock_config
+    check_if_init
     add_path_variables
     ;;
   check-paths)
-    check_if_bedrock_config
+    check_if_init
     echo "Finding theme and plugin paths..."
-    docker compose config | grep -m 2 -E 'THEMES_PATH|PLUGINS_PATH' \
+    docker compose --env-file "$LOCAL_ENV" config | grep -m 2 -E 'THEMES_PATH|PLUGINS_PATH' \
     || echo -e "${YELLOW_BG}❌ Paths not found. Please set THEMES_PATH and PLUGINS_PATH in your .env file.${ENDSTYLE}"
     ;;
-  which-composer)
-    check_if_bedrock_config
-    echo "📦 Using composer file: $COMPOSER"
+  which)
+    check_if_init
+    echo -e "📦 Using composer file: ${CYAN}$COMPOSER${ENDSTYLE}"
     ;;
   help|-h|--help)
     show_help
