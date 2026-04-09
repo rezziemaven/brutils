@@ -1,3 +1,4 @@
+![Brutils Thumbnail](public/img/thumbnail.jpg)
 # 🧰 brutils - Bedrock Utility CLI
 
 A CLI to to help simplify and streamline development across multiple Bedrock configurations. Easily start and stop configurations, manage composer repositories and view local changes faster using separate main and local `composer.json` files, and perform other repetitive dev tasks, all with a few simple commands.
